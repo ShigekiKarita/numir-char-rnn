@@ -15,5 +15,5 @@ in my environment (anaconda=4.3.30, numpy=1.13.3, numir=0.1.0, BLAS/Lapack=Intel
 | lib                |   iter/sec | loss at 10000 iter |
 | :--                |        --: |                --: |
 | numpy              | 548.787952 |              52.28 |
-| numir (dmd 2.783)  | 735.294118 |              53.31 |
+| numir (dmd 2.078.3) | 735.294118 |              53.31 |
 | numir (ldc2 1.7.0) | 787.401575 |              55.65 |
