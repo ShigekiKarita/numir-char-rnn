@@ -16,7 +16,7 @@ import std.algorithm : stdmap = map;
 import std.typecons : Tuple;
 import std.net.curl : get;
 
-import mir.math.common : log, exp, sqrt;
+import mir.math.common : log, exp, sqrt, fastmath;
 import mir.random : Random, unpredictableSeed;
 import mir.random.variable : discreteVar;
 import std.math : tanh;
@@ -25,13 +25,25 @@ import mir.math.sum : sum;
 import lubeck : mtimes;
 import numir;
 
-void dger(S, R)(S x, S y, R A, double alpha=1.0) if (Ndim!S == 2)
+// pragma(inline, true)
+// @fastmath
+ void dger(S, R)(S x, S y, R A, double alpha=1.0) if (Ndim!S == 2)
 in {
     assert(x.length!1 == 1);
     assert(y.length!1 == 1);
 } do {
-    import mir.blas : ger;
-    ger(1.0, x[0..$, 0], y[0..$,0], A);
+    import std.traits;
+    import B = mir.blas;
+    // FIXME ger only exists in mir-blas ~>0.1.0 but lubeck requires <0.1.0
+    static if (__traits(hasMember, B, "ger")) {
+        B.ger(1.0, x[0..$, 0], y[0..$,0], A);
+    } else {
+        foreach (i; 0..A.length!0) {
+            foreach (j; 0..A.length!1) {
+                A[i,j] += alpha * x[i,0] * y[j, 0];
+            }
+        }
+    }
 }
 
 /++
@@ -42,6 +54,7 @@ Params:
 Returns:
     the loss, gradients on model parameters, and last hidden state
  +/
+//@fastmath
 auto lossFun(S, X, T, H)(S[string] params, X inputs, T targets, H hprev) {
     import std.algorithm : clamp;
     S[long] xs, hs, ys, ps;
@@ -69,13 +82,16 @@ auto lossFun(S, X, T, H)(S[string] params, X inputs, T targets, H hprev) {
         auto dy = ps[t];
         dy[targets[t]][] -= 1; // backprop into y. see http://cs231n.github.io/neural-networks-case-study/#grad if confused here
         dger(dy, hs[t], grads["Why"]); // TODO add ger as lubeck.mtimes
+        // grads["Why"][] += mtimes(dy, hs[t].transposed.slice); // FIXME MKL requires slice here
         grads["by"][] += dy;
         auto dh = mtimes(params["Why"].transposed, dy).slice; // backprop into h
         dh[] += dhnext;
-        dh[] *= (1.0 - hs[t] ^^ 2.0); // backprop throgh tanh nonlinearity
+        dh[] *= (1.0 - hs[t] * hs[t]); // backprop throgh tanh nonlinearity
         grads["bh"][] += dh;
         dger(dh, xs[t], grads["Wxh"]);
+        // grads["Wxh"][] += mtimes(dh, xs[t].transposed.slice); // FIXME MKL requires slice here
         dger(dh, hs[t-1], grads["Whh"]);
+        // grads["Whh"][] += mtimes(dh, hs[t-1].transposed.slice); // FIXME MKL requires slice here
         dhnext[] = mtimes(params["Whh"].transposed, dh);
     }
     foreach (v; grads.byValue) {
@@ -93,6 +109,7 @@ Params:
 Returns:
     a sampled sequence of integers from the model
  +/
+//@fastmath
 auto sample(S)(S[string] params, S h, size_t seed_ix, size_t n) {
     auto gen = Random(unpredictableSeed);
     auto x = zeros(params["Wxh"].length!1, 1);
@@ -136,7 +153,8 @@ void main() {
     auto hidden_size = 100; // size of hidden layer of neurons
     auto seq_length = 25;   // number of steps to unroll the RNN for
     auto learning_rate = 1e-1;
-    auto max_iter = 100000;
+    auto max_iter = 10000;
+    auto log_iter = max_iter / 100;
 
     // model parameters
     auto params = [
@@ -158,16 +176,15 @@ void main() {
     auto sw = StopWatch(AutoStart.yes);
     foreach (n_iter; 0 .. max_iter) {
         // prepare inputs (we're sweeping from left to right in steps seq_length long)
-        auto end_id = begin_id + seq_length + 1;
-        if (end_id >= data.length || n_iter == 0) {
+        if (begin_id + seq_length + 1 >= data.length || n_iter == 0) {
             hprev[] = 0; // reset RNN memory
             begin_id = 0; // go from start of data
         }
-        auto raw = data[begin_id .. end_id].stdmap!(c => char_to_ix[c]).array;
+        auto raw = data[begin_id .. begin_id + seq_length + 1].stdmap!(c => char_to_ix[c]).array;
         auto inputs = raw[0 .. $-1];
         auto targets = raw[1 .. $];
         // sample from the model now and then
-        if (n_iter % 100 == 0) {
+        if (n_iter % log_iter == 0) {
             auto sample_ix = sample(params, hprev, inputs[0], 200);
             auto txt = sample_ix.stdmap!(ix => ix_to_char[ix]).to!dstring;
             writeln("-----\n", txt, "\n-----");
@@ -176,13 +193,14 @@ void main() {
         // forward seq_length characters through the net and fetch gradient
         auto results = lossFun(params, inputs, targets, hprev);
         smooth_loss = smooth_loss * 0.999 + results.loss * 0.001;
-        if (n_iter % 100 == 0) {
-            writefln!"iter %d, loss: %f, iter/sec: %f"(n_iter, smooth_loss, 100.0 / (sw.peek().to!TickDuration.msecs * 1e-3));
+        if (n_iter % log_iter == 0) {
+            writefln!"iter %d, loss: %f, iter/sec: %f"(
+                n_iter, smooth_loss,
+                cast(double) log_iter / (sw.peek().to!TickDuration.msecs * 1e-3));
             sw.reset();
-            sw.start();
         }
         foreach (k, v; params) {
-            memory[k][] += results.grads[k] ^^ 2.0;
+            memory[k][] += results.grads[k] * results.grads[k];
             params[k][] -= learning_rate * results.grads[k] / (memory[k] + 1e-8).map!sqrt; // adagrad update
         }
         begin_id += seq_length; // move data pointer

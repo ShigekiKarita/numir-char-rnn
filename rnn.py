@@ -111,6 +111,8 @@ mWxh, mWhh, mWhy = np.zeros_like(Wxh), np.zeros_like(Whh), np.zeros_like(Why)
 mbh, mby = np.zeros_like(bh), np.zeros_like(by) # memory variables for Adagrad
 smooth_loss = -np.log(1.0/vocab_size)*seq_length # loss at iteration 0
 tested = False
+max_iter = 10000
+log_iter = max_iter // 100
 starttime = time.time()
 while True:
   # prepare inputs (we're sweeping from left to right in steps seq_length long)
@@ -124,7 +126,7 @@ while True:
   #   tested = True
 
   # sample from the model now and then
-  if n % 100 == 0:
+  if n % log_iter == 0:
     sample_ix = sample(hprev, inputs[0], 200)
     txt = ''.join(ix_to_char[ix] for ix in sample_ix)
     print('----\n %s \n----' % (txt, ))
@@ -132,9 +134,9 @@ while True:
   # forward seq_length characters through the net and fetch gradient
   loss, dWxh, dWhh, dWhy, dbh, dby, hprev = lossFun(inputs, targets, hprev)
   smooth_loss = smooth_loss * 0.999 + loss * 0.001
-  if n % 100 == 0:
+  if n % log_iter == 0:
     now = time.time()
-    print('iter %d, loss: %f, iter/sec %f' % (n, smooth_loss, 100 / (now - starttime))) # print progress
+    print('iter %d, loss: %f, iter/sec %f' % (n, smooth_loss, log_iter / (now - starttime))) # print progress
     starttime = time.time()
   
   # perform parameter update with Adagrad
@@ -146,4 +148,7 @@ while True:
 
   p += seq_length # move data pointer
   n += 1 # iteration counter 
+  if n == max_iter:
+    break
+
 

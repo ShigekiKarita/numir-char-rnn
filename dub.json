@@ -1,15 +1,14 @@
 {
-	"name": "numir-char-rnn",
-	"authors": [
-		"karita"
-	],
-	"dependencies": {
-		"numir": "~>0.1.0",
-        "lubeck": "~>0.0.4",
-        "mir-blas": "~>0.1.0"
-	},
+    "name": "numir-char-rnn",
+    "authors": [
+        "karita"
+    ],
+    "dependencies": {
+        "numir": "~>0.1.0",
+        "lubeck": "~>0.0.4"
+    },
     "libs": ["mkl_rt"],
-	"description": "A minimal D application.",
-	"copyright": "Copyright © 2018, karita",
-	"license": "BSL-1.0"
+    "description": "A minimal D application.",
+    "copyright": "Copyright © 2018, karita",
+    "license": "BSL-1.0"
 }
