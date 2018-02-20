@@ -5,7 +5,7 @@
     ],
     "dependencies": {
         "numir": "~>0.1.0",
-        "lubeck": "~>0.0.4"
+        "lubeck": { "path": "./lubeck" }
     },
     "libs": ["mkl_rt"],
     "description": "A minimal D application.",

@@ -1,0 +1,3 @@
+[submodule "lubeck"]
+	path = lubeck
+	url = git@github.com:ShigekiKarita/lubeck.git

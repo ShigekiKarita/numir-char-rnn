@@ -25,26 +25,6 @@ import mir.math.sum : sum;
 import lubeck : mtimes;
 import numir;
 
-// pragma(inline, true)
-// @fastmath
- void dger(S, R)(S x, S y, R A, double alpha=1.0) if (Ndim!S == 2)
-in {
-    assert(x.length!1 == 1);
-    assert(y.length!1 == 1);
-} do {
-    import std.traits;
-    import B = mir.blas;
-    // FIXME ger only exists in mir-blas ~>0.1.0 but lubeck requires <0.1.0
-    static if (__traits(hasMember, B, "ger")) {
-        B.ger(1.0, x[0..$, 0], y[0..$,0], A);
-    } else {
-        foreach (i; 0..A.length!0) {
-            foreach (j; 0..A.length!1) {
-                A[i,j] += alpha * x[i,0] * y[j, 0];
-            }
-        }
-    }
-}
 
 /++
 Params:
@@ -81,17 +61,14 @@ auto lossFun(S, X, T, H)(S[string] params, X inputs, T targets, H hprev) {
     foreach_reverse (t; 0 .. inputs.length) {
         auto dy = ps[t];
         dy[targets[t]][] -= 1; // backprop into y. see http://cs231n.github.io/neural-networks-case-study/#grad if confused here
-        dger(dy, hs[t], grads["Why"]); // TODO add ger as lubeck.mtimes
-        // grads["Why"][] += mtimes(dy, hs[t].transposed.slice); // FIXME MKL requires slice here
+        grads["Why"][] += mtimes(dy, hs[t].transposed);
         grads["by"][] += dy;
         auto dh = mtimes(params["Why"].transposed, dy).slice; // backprop into h
         dh[] += dhnext;
         dh[] *= (1.0 - hs[t] * hs[t]); // backprop throgh tanh nonlinearity
         grads["bh"][] += dh;
-        dger(dh, xs[t], grads["Wxh"]);
-        // grads["Wxh"][] += mtimes(dh, xs[t].transposed.slice); // FIXME MKL requires slice here
-        dger(dh, hs[t-1], grads["Whh"]);
-        // grads["Whh"][] += mtimes(dh, hs[t-1].transposed.slice); // FIXME MKL requires slice here
+        grads["Wxh"][] += mtimes(dh, xs[t].transposed);
+        grads["Whh"][] += mtimes(dh, hs[t-1].transposed);
         dhnext[] = mtimes(params["Whh"].transposed, dh);
     }
     foreach (v; grads.byValue) {
