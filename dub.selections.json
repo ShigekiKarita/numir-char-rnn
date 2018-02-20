@@ -3,7 +3,7 @@
 	"versions": {
 		"cblas": "2.0.1",
 		"lapack": "0.0.3",
-		"lubeck": "0.0.4",
+		"lubeck": "0.0.5",
 		"mir-algorithm": "0.8.0",
 		"mir-blas": "0.1.1",
 		"mir-lapack": "0.0.6",

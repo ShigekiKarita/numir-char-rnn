@@ -13,7 +13,7 @@ import std.datetime.stopwatch; //  : StopWatch, seconds, TickDuration;
 import std.conv : to;
 import std.file : readText, exists;
 import std.algorithm : stdmap = map;
-import std.typecons : Tuple;
+import std.typecons : tuple;
 import std.net.curl : get;
 
 import mir.math.common : log, exp, sqrt, fastmath;
@@ -27,23 +27,13 @@ import numir;
 
 // pragma(inline, true)
 // @fastmath
- void dger(S, R)(S x, S y, R A, double alpha=1.0) if (Ndim!S == 2)
+void dger(S, R)(S x, S y, R A, double alpha=1.0) if (Ndim!S == 2)
 in {
     assert(x.length!1 == 1);
     assert(y.length!1 == 1);
 } do {
-    import std.traits;
-    import B = mir.blas;
-    // FIXME ger only exists in mir-blas ~>0.1.0 but lubeck requires <0.1.0
-    static if (__traits(hasMember, B, "ger")) {
-        B.ger(1.0, x[0..$, 0], y[0..$,0], A);
-    } else {
-        foreach (i; 0..A.length!0) {
-            foreach (j; 0..A.length!1) {
-                A[i,j] += alpha * x[i,0] * y[j, 0];
-            }
-        }
-    }
+    import mir.blas : ger;
+    ger(1.0, x[0..$, 0], y[0..$,0], A);
 }
 
 /++
@@ -54,20 +44,21 @@ Params:
 Returns:
     the loss, gradients on model parameters, and last hidden state
  +/
-//@fastmath
+// @fastmath
 auto lossFun(S, X, T, H)(S[string] params, X inputs, T targets, H hprev) {
     import std.algorithm : clamp;
-    S[long] xs, hs, ys, ps;
-    hs[-1] = empty_like(hprev);
-    hs[-1][] = hprev;
+    auto xs = zeros(inputs.length, params["Wxh"].length!1, 1);
+    auto hs = zeros(inputs.length, params["bh"].length!0, 1);
+    auto ys = zeros(inputs.length, params["by"].length!0, 1);
+    auto ps = zeros_like(ys);
     double loss = 0;
     // forward pass
     foreach (t, i; inputs) {
-        xs[t] = zeros(params["Wxh"].length!1, 1); // encode in 1-of-k reps
-        xs[t][i, 0] = 1;
-        hs[t] = map!tanh(mtimes(params["Wxh"], xs[t]) + mtimes(params["Whh"], hs[t-1]) + params["bh"]).slice; // hidden state
-        ys[t] = slice(mtimes(params["Why"], hs[t]) + params["by"]); // unnormalized log probabilities for next chars
-        ps[t] = map!exp(ys[t]).slice;
+        xs[t][i, 0] = 1; // encode in 1-of-k reps
+        auto hp = t == 0 ? hprev : hs[t-1];
+        hs[t][] = map!tanh(mtimes(params["Wxh"], xs[t]) + mtimes(params["Whh"], hp) + params["bh"]); // hidden state
+        ys[t][] = mtimes(params["Why"], hs[t]) + params["by"]; // unnormalized log probabilities for next chars
+        ps[t][] = map!exp(ys[t]);
         ps[t][] /= ps[t].sum!"fast"; // probabilities for next chars
         loss += -log(ps[t][targets[t], 0]); // softmax (cross-entropy loss)
     }
@@ -81,23 +72,24 @@ auto lossFun(S, X, T, H)(S[string] params, X inputs, T targets, H hprev) {
     foreach_reverse (t; 0 .. inputs.length) {
         auto dy = ps[t];
         dy[targets[t]][] -= 1; // backprop into y. see http://cs231n.github.io/neural-networks-case-study/#grad if confused here
-        dger(dy, hs[t], grads["Why"]); // TODO add ger as lubeck.mtimes
-        // grads["Why"][] += mtimes(dy, hs[t].transposed.slice); // FIXME MKL requires slice here
+        dger(dy, hs[t], grads["Why"]);
+        // grads["Why"][] += mtimes(dy, hs[t].transposed);
         grads["by"][] += dy;
-        auto dh = mtimes(params["Why"].transposed, dy).slice; // backprop into h
+        auto dh = mtimes(params["Why"].transposed, dy); // backprop into h
         dh[] += dhnext;
         dh[] *= (1.0 - hs[t] * hs[t]); // backprop throgh tanh nonlinearity
         grads["bh"][] += dh;
         dger(dh, xs[t], grads["Wxh"]);
-        // grads["Wxh"][] += mtimes(dh, xs[t].transposed.slice); // FIXME MKL requires slice here
-        dger(dh, hs[t-1], grads["Whh"]);
-        // grads["Whh"][] += mtimes(dh, hs[t-1].transposed.slice); // FIXME MKL requires slice here
+        // grads["Wxh"][] += mtimes(dh, xs[t].transposed);
+        auto hp = t == 0 ? hprev : hs[t-1];
+        dger(dh, hp, grads["Whh"]);
+        // grads["Whh"][] += mtimes(dh, hs[t-1].transposed);
         dhnext[] = mtimes(params["Whh"].transposed, dh);
     }
     foreach (v; grads.byValue) {
         v[] = v.map!(a => clamp(a, -5, 5)); // clip to mitigate exploding gradients
     }
-    return Tuple!(double, "loss", S[string], "grads")(loss, grads);
+    return tuple!("loss", "grads")(loss, grads);
 }
 
 

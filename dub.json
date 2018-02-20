@@ -5,7 +5,7 @@
     ],
     "dependencies": {
         "numir": "~>0.1.0",
-        "lubeck": "~>0.0.4"
+        "lubeck": "~>0.0.5"
     },
     "libs": ["mkl_rt"],
     "description": "A minimal D application.",
