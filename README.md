@@ -11,59 +11,62 @@ $ export OMP_NUM_THREADS=1
 
 $ time dub run -b=release-nobounds --compiler=ldc2
 ...
-iter 9900, loss: 54.215532, iter/sec: 1190.476190
-dub run -b=release-nobounds --compiler=ldc2  8.74s user 0.26s system 98% cpu 9.164 total
+iter 9900, loss: 54.466940, iter/sec: 2173.913043
+./numir-char-rnn  4.78s user 0.02s system 99% cpu 4.793 total
 
 $ time dub run -b=release-nobounds --compiler=dmd
 ...
-iter 9900, loss: 56.192083, iter/sec: 751.879699
-dub run -b=release-nobounds --compiler=dmd  13.65s user 0.10s system 98% cpu 13.998 total
+iter 9900, loss: 55.695879, iter/sec: 1298.701299
+./numir-char-rnn  7.94s user 0.00s system 99% cpu 7.953 total
 
 $ time python rnn.py
 ...
-iter 9900, loss: 56.515613, iter/sec 337.730925
-python rnn.py  29.94s user 0.06s system 99% cpu 30.050 total
+iter 9900, loss: 56.042335, iter/sec 529.142218
+python rnn.py  18.46s user 0.02s system 99% cpu 18.491 total
 ```
 
 ## results
 
-my environment 
+my environment
 - anaconda=4.3.30
 - numpy=1.13.3
 - numir=0.1.0 (see dub.selections.json)
 - BLAS/Lapack=IntelMKL in anaconda
-- CPU=Intel(R) Xeon(R) CPU E5-2695 v3 @ 2.30GHz
+- CPU=Intel(R) Core(TM) i7-6820HQ CPU @ 2.70GHz
 
 | lib                 | `OMP_NUM_THREADS` | 10000 iter time (sec) | 10000 iter loss |
 | :--                 | :--               |                   --: |             --: |
-| numpy               | unset             |                109.87 |           57.21 |
-| numir (dmd 2.078.3) | unset             |                 57.43 |           52.98 |
-| numir (ldc2 1.7.0)  | unset             |                 40.64 |           56.14 |
-| numpy               | 1                 |                 29.94 |           56.51 |
-| numir (dmd 2.078.3) | 1                 |                 13.65 |           56.19 |
-| numir (ldc2 1.7.0)  | 1                 |              **8.41** |           54.93 |
-
-numir is about 3.5 times faster than numpy
+| numpy               | 1                 |                 18.46 |           56.04 |
+| numir (dmd 2.078.3) | 1                 |                  7.94 |           55,69 |
+| numir (ldc2 1.7.0)  | 1                 |              **4.78** |           54.46 |
 
 
-# examples
+numir is about 3.86 times faster than numpy
+
+
+## examples
 
 after 1000000 iter (13 min), the sampled chars become
 
 ```
-deremer not o', spear                                                                                                       
-So; these were through kis.                                                                                                 
-                                                                                                                            
-HENRY PERCY:                                                                                                                
-Him!                                                                                                                        
-Now'd man is a many bone chait.                                                                                             
-Th.                                                                                                                         
-                                                                                                                            
-THIN:                                                                                                                       
-Nor air true evern dey'd truity I coming warn you hands                                                                     
-Finched Tybsh soultan the is wit 
+deremer not o', spear
+So; these were through kis.
+
+HENRY PERCY:
+Him!
+Now'd man is a many bone chait.
+Th.
+
+THIN:
+Nor air true evern dey'd truity I coming warn you hands
+Finched Tybsh soultan the is wit
 -----
-iter 999900, loss: 43.986925, iter/sec: 1204.819277           
+iter 999900, loss: 43.986925, iter/sec: 1204.819277
 dub run -b=release-nobounds --compiler=ldc2  829.59s user 1.04s system 99% cpu 13:52.50 total
 ```
 
+## ref
+
+- numir - numpy-like mir helper functions https://github.com/libmir/numir
+- lubeck - High level linear algebra library for Dlang https://github.com/kaleidicassociates/lubeck
+- mir tips https://github.com/kaleidicassociates/lubeck/issues/8#issuecomment-366977455

@@ -45,51 +45,51 @@ Returns:
     the loss, gradients on model parameters, and last hidden state
  +/
 // @fastmath
-auto lossFun(S, X, T, H)(S[string] params, X inputs, T targets, H hprev) {
+auto lossFun(STuple, X, T, H)(STuple params, X inputs, T targets, H hprev) {
     import std.algorithm : clamp;
-    auto xs = zeros(inputs.length, params["Wxh"].length!1, 1);
-    auto hs = zeros(inputs.length, params["bh"].length!0, 1);
-    auto ys = zeros(inputs.length, params["by"].length!0, 1);
-    auto ps = zeros_like(ys);
-    double loss = 0;
-    // forward pass
-    foreach (t, i; inputs) {
-        xs[t][i, 0] = 1; // encode in 1-of-k reps
-        auto hp = t == 0 ? hprev : hs[t-1];
-        hs[t][] = map!tanh(mtimes(params["Wxh"], xs[t]) + mtimes(params["Whh"], hp) + params["bh"]); // hidden state
-        ys[t][] = mtimes(params["Why"], hs[t]) + params["by"]; // unnormalized log probabilities for next chars
-        ps[t][] = map!exp(ys[t]);
-        ps[t][] /= ps[t].sum!"fast"; // probabilities for next chars
-        loss += -log(ps[t][targets[t], 0]); // softmax (cross-entropy loss)
-    }
+    with (params) {
+        auto xs = zeros(inputs.length, Wxh.length!1, 1);
+        auto hs = zeros(inputs.length, bh.length!0, 1);
+        auto ys = zeros(inputs.length, by.length!0, 1);
+        auto ps = zeros_like(ys);
+        double loss = 0;
+        // forward pass
+        foreach (t, i; inputs) {
+            xs[t][i, 0] = 1; // encode in 1-of-k reps
+            auto hp = t == 0 ? hprev : hs[t-1];
+            hs[t][] = map!tanh(mtimes(Wxh, xs[t]) + mtimes(Whh, hp) + bh); // hidden state
+            ys[t][] = mtimes(Why, hs[t]) + by; // unnormalized log probabilities for next chars
+            ps[t][] = map!exp(ys[t]);
+            ps[t][] /= ps[t].sum!"fast"; // probabilities for next chars
+            loss += -log(ps[t][targets[t], 0]); // softmax (cross-entropy loss)
+        }
 
-    // backward pass: compute gradients of going backwards
-    S[string] grads;
-    foreach (k, v; params) {
-        grads[k] = zeros_like(v);
+        // backward pass: compute gradients of going backwards
+        STuple grads;
+        foreach (k, v; params) {
+            grads[k] = zeros_like(v);
+        }
+        auto dhnext = zeros_like(hs[0]);
+        foreach_reverse (t, i; inputs) {
+            auto dy = ps[t];
+            dy[targets[t]][] -= 1; // backprop into y. see http://cs231n.github.io/neural-networks-case-study/#grad if confused here
+            dger(dy, hs[t], grads.Why);
+            // grads["Why"][] += mtimes(dy, hs[t].transposed);
+            grads.by[] += dy;
+            auto dh = mtimes(Why.transposed, dy); // backprop into h
+            dh[] += dhnext;
+            dh[] *= (1.0 - hs[t] * hs[t]); // backprop throgh tanh nonlinearity
+            grads.bh[] += dh;
+            dger(dh, xs[t], grads.Wxh);
+            auto hp = t == 0 ? hprev : hs[t-1];
+            dger(dh, hp, grads.Whh);
+            dhnext[] = mtimes(Whh.transposed, dh);
+        }
+        foreach (v; grads) {
+            v[] = v.map!(a => clamp(a, -5, 5)); // clip to mitigate exploding gradients
+        }
+        return tuple!("loss", "grads")(loss, grads);
     }
-    auto dhnext = zeros_like(hs[0]);
-    foreach_reverse (t; 0 .. inputs.length) {
-        auto dy = ps[t];
-        dy[targets[t]][] -= 1; // backprop into y. see http://cs231n.github.io/neural-networks-case-study/#grad if confused here
-        dger(dy, hs[t], grads["Why"]);
-        // grads["Why"][] += mtimes(dy, hs[t].transposed);
-        grads["by"][] += dy;
-        auto dh = mtimes(params["Why"].transposed, dy); // backprop into h
-        dh[] += dhnext;
-        dh[] *= (1.0 - hs[t] * hs[t]); // backprop throgh tanh nonlinearity
-        grads["bh"][] += dh;
-        dger(dh, xs[t], grads["Wxh"]);
-        // grads["Wxh"][] += mtimes(dh, xs[t].transposed);
-        auto hp = t == 0 ? hprev : hs[t-1];
-        dger(dh, hp, grads["Whh"]);
-        // grads["Whh"][] += mtimes(dh, hs[t-1].transposed);
-        dhnext[] = mtimes(params["Whh"].transposed, dh);
-    }
-    foreach (v; grads.byValue) {
-        v[] = v.map!(a => clamp(a, -5, 5)); // clip to mitigate exploding gradients
-    }
-    return tuple!("loss", "grads")(loss, grads);
 }
 
 
@@ -102,15 +102,15 @@ Returns:
     a sampled sequence of integers from the model
  +/
 //@fastmath
-auto sample(S)(S[string] params, S h, size_t seed_ix, size_t n) {
+auto sample(STuple, S)(STuple params, S h, size_t seed_ix, size_t n) {
     auto gen = Random(unpredictableSeed);
-    auto x = zeros(params["Wxh"].length!1, 1);
+    auto x = zeros(params.Wxh.length!1, 1);
     x[seed_ix][] = 1;
     size_t[] ixes;
     ixes.length = n;
     foreach (t; 0 .. n) {
-        h[] = map!tanh(mtimes(params["Wxh"], x) + mtimes(params["Whh"], h) + params["bh"]);
-        auto y = mtimes(params["Why"], h) + params["by"];
+        h[] = map!tanh(mtimes(params.Wxh, x) + mtimes(params.Whh, h) + params.bh);
+        auto y = mtimes(params.Why, h) + params.by;
         auto p = map!exp(y).slice;
         p[] /= p.sum;
         auto ix = discreteVar(p.squeeze!1.ndarray)(gen);
@@ -149,13 +149,13 @@ void main() {
     auto log_iter = max_iter / 100;
 
     // model parameters
-    auto params = [
-        "Wxh": (normal(hidden_size, vocab_size) * 0.01).slice,  // input to hidden
-        "Whh": (normal(hidden_size, hidden_size) * 0.01).slice, // hidden to hidden
-        "Why": (normal(vocab_size, hidden_size) * 0.01).slice,  // hidden to output
-        "bh": zeros(hidden_size, 1), // hidden bias
-        "by": zeros(vocab_size, 1)   // output bias
-        ];
+    auto params = tuple!("Wxh", "Whh", "Why", "bh", "by")
+        ((normal(hidden_size, vocab_size) * 0.01).slice,  // input to hidden
+         (normal(hidden_size, hidden_size) * 0.01).slice, // hidden to hidden
+         (normal(vocab_size, hidden_size) * 0.01).slice,  // hidden to output
+         zeros(hidden_size, 1), // hidden bias
+         zeros(vocab_size, 1)   // output bias
+         );
 
     // memory variables for Adagrad
     typeof(params) memory;
